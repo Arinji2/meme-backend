@@ -6,11 +6,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	custom_log "github.com/Arinji2/meme-backend/logger"
 	"github.com/Arinji2/meme-backend/routes/oauth"
 	"github.com/Arinji2/meme-backend/routes/user"
-	"github.com/Arinji2/meme-backend/sql"
+	sql_db "github.com/Arinji2/meme-backend/sql"
 	session_dal "github.com/Arinji2/meme-backend/sql/dal/session"
 	"github.com/Arinji2/meme-backend/types"
 	"github.com/go-chi/chi/v5"
@@ -47,10 +48,18 @@ func main() {
 	}))
 
 	r.Route("/oauth2-redirect", (func(r chi.Router) {
+		r.Use(DBMiddleware)
 		r.Get("/google", oauth.RegisterWithGoogleOauth)
 	}))
 
-	http.ListenAndServe(":8080", r)
+	server := &http.Server{
+		Addr:         ":8080",
+		Handler:      r,
+		WriteTimeout: 60 * time.Second,
+		ReadTimeout:  60 * time.Second,
+	}
+
+	log.Fatal(server.ListenAndServe())
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -83,24 +92,25 @@ func SkipLoggingMiddleware(next http.Handler) http.Handler {
 
 func DBMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		db := sql.GetDB()
+		db := sql_db.GetDB()
 		ctx := context.WithValue(r.Context(), types.DBKey, db)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
 		next.ServeHTTP(w, r.WithContext(ctx))
+
 	})
 }
 
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.Header.Get("X-Session-ID")
-		fmt.Println(sessionID)
+
 		session, err := session_dal.GetUserBySession(r.Context(), sessionID)
 		if err != nil {
-			fmt.Println(err)
+
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-
-		// Add the user ID to the request context
 		ctx := context.WithValue(r.Context(), types.UserIDKey, session.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

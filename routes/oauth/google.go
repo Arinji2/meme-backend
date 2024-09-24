@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/Arinji2/meme-backend/api"
 	custom_log "github.com/Arinji2/meme-backend/logger"
+	provider_dal "github.com/Arinji2/meme-backend/sql/dal/provider"
+	user_dal "github.com/Arinji2/meme-backend/sql/dal/user"
 	"github.com/Arinji2/meme-backend/types"
 )
 
@@ -48,6 +51,12 @@ func RegisterWithGoogleOauth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	expiry, ok := result["expires_in"].(float64)
+	if !ok {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+
+	}
 
 	accessToken, err := GetGoogleAccessToken(refreshToken)
 	if err != nil {
@@ -55,13 +64,38 @@ func RegisterWithGoogleOauth(w http.ResponseWriter, r *http.Request) {
 		custom_log.Logger.Errorf("Error Getting Google Access Token: %v", err)
 		return
 	}
+
 	userInfo, err := getGoogleUserInfo(accessToken)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		custom_log.Logger.Errorf("Error Getting Google User Info: %v", err)
 		return
 	}
-	fmt.Println(userInfo.Email)
+
+	createdUser, err := user_dal.InitUser(r.Context(), types.User{
+		Email:    userInfo.Email,
+		Username: userInfo.Name,
+	})
+
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		custom_log.Logger.Errorf("Error Creating User: %v", err)
+		return
+	}
+
+	provider := types.Provider{
+		ProviderID:   1,
+		RefreshToken: refreshToken,
+		AccessToken:  accessToken,
+		ExpiresOn:    time.Now().Add(time.Second * time.Duration(expiry)),
+	}
+
+	err = provider_dal.CreateProvider(r.Context(), createdUser, provider)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		custom_log.Logger.Errorf("Error Creating Provider: %v", err)
+		return
+	}
 
 }
 
@@ -83,7 +117,7 @@ func GetGoogleAccessToken(refreshToken string) (string, error) {
 
 	if status != 200 {
 
-		return "", errors.New("at status code: " + string(status))
+		return "", fmt.Errorf("at status code: %d", status)
 	}
 
 	return result["access_token"].(string), nil
@@ -102,7 +136,7 @@ func getGoogleUserInfo(accessToken string) (types.GoogleUserInfo, error) {
 		return types.GoogleUserInfo{}, errors.New("at fetching data" + err.Error())
 	}
 	if status != 200 {
-		fmt.Println(status)
+
 		return types.GoogleUserInfo{}, errors.New("at fetching data, status code: " + string(status))
 	}
 

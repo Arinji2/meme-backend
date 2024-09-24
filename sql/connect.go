@@ -1,4 +1,4 @@
-package sql
+package sql_db
 
 import (
 	"context"
@@ -77,10 +77,8 @@ func ExecuteQuery(ctx context.Context, query string, args ...interface{}) (*sql.
 	return rows, nil
 }
 
-func ExecuteQueryRow(ctx context.Context, query string, args ...interface{}) (*sql.Row, context.CancelFunc) {
+func ExecuteQueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
 	db := GetDB()
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-
-	return db.QueryRowContext(ctx, query, args...), cancel
+	return db.QueryRowContext(ctx, query, args...)
 }
