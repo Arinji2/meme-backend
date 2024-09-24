@@ -8,6 +8,7 @@ import (
 	"os"
 
 	custom_log "github.com/Arinji2/meme-backend/logger"
+	"github.com/Arinji2/meme-backend/routes/oauth"
 	"github.com/Arinji2/meme-backend/routes/user"
 	"github.com/Arinji2/meme-backend/sql"
 	session_dal "github.com/Arinji2/meme-backend/sql/dal/session"
@@ -43,6 +44,10 @@ func main() {
 		r.Route("/users", (func(r chi.Router) {
 			r.Get("/by-email", user.GetUserByEmailHandler)
 		}))
+	}))
+
+	r.Route("/oauth2-redirect", (func(r chi.Router) {
+		r.Get("/google", oauth.RegisterWithGoogleOauth)
 	}))
 
 	http.ListenAndServe(":8080", r)

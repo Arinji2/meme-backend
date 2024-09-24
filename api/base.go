@@ -57,37 +57,47 @@ func (c *ApiClient) doRequest(req *http.Request, headers map[string]string) (map
 func (c *ApiClient) SendRequestWithBody(method, path string, body interface{}, headers map[string]string, contentType string) (result map[string]interface{}, status int, err error) {
 	address := fmt.Sprintf("%s%s", c.BaseURL, path)
 
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		status = 500
-		err = fmt.Errorf("error marshalling json: %w", err)
-		return
+	var reqBody *bytes.Buffer
+
+	if contentType == "application/x-www-form-urlencoded" {
+		formData, ok := body.(map[string]string)
+		if !ok {
+			return nil, 500, fmt.Errorf("expected body to be map[string]string for form-encoded data")
+		}
+
+		formValues := url.Values{}
+		for key, value := range formData {
+			formValues.Set(key, value)
+		}
+		reqBody = bytes.NewBufferString(formValues.Encode())
+	} else {
+		jsonBody, jsonErr := json.Marshal(body)
+		if jsonErr != nil {
+			return nil, 500, fmt.Errorf("error marshalling json: %w", jsonErr)
+		}
+		reqBody = bytes.NewBuffer(jsonBody)
+		if contentType == "" {
+			contentType = "application/json"
+		}
 	}
 
-	req, err := http.NewRequest(method, address, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		status = 500
-		err = fmt.Errorf("error creating request: %w", err)
-		return
+	req, reqErr := http.NewRequest(method, address, reqBody)
+	if reqErr != nil {
+		return nil, 500, fmt.Errorf("error creating request: %w", reqErr)
 	}
 
 	for key, val := range headers {
 		req.Header.Set(key, val)
 	}
 
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	} else {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req.Header.Set("Content-Type", contentType)
 
 	result, status, err = c.doRequest(req, headers)
 	if err != nil {
-		err = fmt.Errorf("error from request doer: %w", err)
-		return
+		return nil, status, fmt.Errorf("error from request doer: %w", err)
 	}
 
-	return
+	return result, status, nil
 }
 
 func (c *ApiClient) SendRequestWithQuery(method, path string, query map[string]string, headers map[string]string) (result map[string]interface{}, status int, err error) {
